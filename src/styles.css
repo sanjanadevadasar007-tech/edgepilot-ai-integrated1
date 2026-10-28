@@ -1226,6 +1226,120 @@ select:focus-visible {
   line-height: 1.65;
 }
 
+.what-if-controls {
+  display: grid;
+  width: min(100%, 340px);
+  flex: 0 0 min(100%, 340px);
+  gap: 10px;
+}
+
+.what-if-controls label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #b7b0c9;
+  font-size: 11px;
+}
+
+.what-if-controls label strong {
+  color: #d5c2ff;
+  font: 11px var(--mono);
+}
+
+.what-if-controls input[type='range'] {
+  width: 100%;
+  accent-color: var(--violet);
+}
+
+.scenario-result {
+  margin-top: 14px;
+  padding: 23px 27px;
+  border-color: #594b775e;
+  background: linear-gradient(110deg, #151321, #0e0d18);
+}
+
+.scenario-result-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.scenario-result-heading h2 {
+  margin: 7px 0 0;
+  font-size: 17px;
+}
+
+.scenario-result-heading > span {
+  color: #d5c4ff;
+  font: 11px var(--mono);
+  text-align: right;
+}
+
+.scenario-result > p {
+  color: #b9b3ca;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.scenario-score-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.scenario-score-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #393248;
+  border-radius: 7px;
+  background: #100e19;
+}
+
+.scenario-score-grid span {
+  color: #a49eb5;
+  font-size: 10px;
+}
+
+.scenario-score-grid strong {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #e6def9;
+  font: 10px var(--mono);
+}
+
+.scenario-score-grid small {
+  color: #aaa5bb;
+  font: inherit;
+}
+
+.scenario-score-grid .score-up {
+  color: #80c4a4;
+}
+
+.scenario-score-grid .score-down {
+  color: #e6a18f;
+}
+
+.scenario-result > .scenario-metrics-note {
+  margin: 16px 0 0;
+  color: #d1bdff;
+}
+
+.scenario-limitations {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #918ba1;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .info-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2889,6 +3003,23 @@ select:focus-visible {
 
   .what-if-card .button {
     width: 100%;
+  }
+
+  .what-if-controls {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .scenario-result-heading {
+    flex-direction: column;
+  }
+
+  .scenario-result-heading > span {
+    text-align: left;
+  }
+
+  .scenario-score-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .result-actions {

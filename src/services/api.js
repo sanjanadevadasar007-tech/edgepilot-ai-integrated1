@@ -1,7 +1,6 @@
-const API_BASE = 'https://phrase-boastful-issue.ngrok-free.dev/api';
+const API_BASE = '/api';
 const REQUEST_HEADERS = {
   'Content-Type': 'application/json',
-  'ngrok-skip-browser-warning': 'true',
 };
 
 async function request(url, options = {}, serviceName = 'Backend') {
@@ -14,7 +13,6 @@ async function request(url, options = {}, serviceName = 'Backend') {
 
 export async function checkBackendHealth(signal) {
   await request(`${API_BASE}/health`, {
-    headers: { 'ngrok-skip-browser-warning': 'true' },
     signal,
   }, 'Health check');
 }
@@ -28,11 +26,20 @@ export async function getRecommendation(workload) {
   return response.json();
 }
 
-export async function getRecommendationReport(recommendation) {
+export async function simulateWorkload(workload, changes) {
+  const response = await request(`${API_BASE}/simulate`, {
+    method: 'POST',
+    headers: REQUEST_HEADERS,
+    body: JSON.stringify({ workload, changes }),
+  }, 'Scenario simulation service');
+  return response.json();
+}
+
+export async function getRecommendationReport(workload) {
   const response = await request(`${API_BASE}/report`, {
     method: 'POST',
     headers: REQUEST_HEADERS,
-    body: JSON.stringify(recommendation),
+    body: JSON.stringify({ workload }),
   }, 'Report service');
   return response.blob();
 }

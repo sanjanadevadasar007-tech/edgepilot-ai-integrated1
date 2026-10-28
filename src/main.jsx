@@ -4,8 +4,8 @@ import {
   checkBackendHealth,
   getRecommendation,
   getRecommendationReport,
+  simulateWorkload,
 } from './services/api.js';
-import { benchmarkStatus } from './data/benchmarkStatus.js';
 import './styles.css';
 
 const HeroScene = lazy(() => import('./components/HeroScene.jsx'));
@@ -18,6 +18,22 @@ const INITIAL_WORKLOAD = {
   budget_monthly: '1000',
   privacy_requirement: 'high',
   criticality: 'high',
+};
+const BENCHMARK_PROFILES = {
+  mobilenetS25: {
+    application_type: 'smart_camera',
+    model_name: 'mobilenet_v2',
+    target_device: 'Samsung Galaxy S25 (Family)',
+    runtime: 'tflite',
+    precision: 'float',
+  },
+  mobilenetS24: {
+    application_type: 'smart_camera',
+    model_name: 'mobilenet_v2',
+    target_device: 'Samsung Galaxy S24',
+    runtime: 'ONNX Runtime',
+    precision: 'w8a8',
+  },
 };
 const MOCK_RECOMMENDATION = {
   recommendation: 'Regional edge',
@@ -712,6 +728,7 @@ function WorkloadSignalPreview({ workload }) {
 function Analyzer({ workload, setWorkload, onAnalyze, busy }) {
   const [applicationType, setApplicationType] = useState('');
   const [modelSize, setModelSize] = useState('');
+  const [benchmarkProfile, setBenchmarkProfile] = useState('');
 
   function updateWorkload(event) {
     const { name, value } = event.target;
@@ -743,6 +760,7 @@ function Analyzer({ workload, setWorkload, onAnalyze, busy }) {
       budget_monthly: budget,
       privacy_requirement: workload.privacy_requirement,
       criticality: workload.criticality,
+      ...(benchmarkProfile ? BENCHMARK_PROFILES[benchmarkProfile] : {}),
     });
   }
 
@@ -844,7 +862,7 @@ function Analyzer({ workload, setWorkload, onAnalyze, busy }) {
           <WorkloadSignalPreview workload={workload} />
         </div>
         <fieldset className="optional-fields">
-          <legend>Optional context — not sent to backend</legend>
+          <legend>Optional context — application notes stay local</legend>
           <div className="form-grid">
             <label className="field">
               <span>Application type</span>
@@ -865,6 +883,24 @@ function Analyzer({ workload, setWorkload, onAnalyze, busy }) {
               />
             </label>
           </div>
+        </fieldset>
+        <fieldset className="optional-fields benchmark-profile-fields">
+          <legend>Optional Qualcomm inference benchmark match</legend>
+          <label className="field" htmlFor="benchmark-profile">
+            <span>Benchmark profile</span>
+            <select
+              id="benchmark-profile"
+              value={benchmarkProfile}
+              onChange={(event) => setBenchmarkProfile(event.target.value)}
+            >
+              <option value="">No specific model/device</option>
+              <option value="mobilenetS25">MobileNet V2 · Galaxy S25 · TFLite · float</option>
+              <option value="mobilenetS24">MobileNet V2 · Galaxy S24 · ONNX Runtime · W8A8</option>
+            </select>
+            <small>
+              Only exact profile matches are returned. Inference latency is not end-to-end latency.
+            </small>
+          </label>
         </fieldset>
         <div className="form-submit">
           {busy && (
@@ -1092,7 +1128,21 @@ function InfoCard({ title, items }) {
   );
 }
 
-function Results({ resultData, resultSource, setPath, onReport, reporting }) {
+function Results({
+  resultData,
+  resultSource,
+  reportWorkload,
+  simulationData,
+  simulating,
+  onSimulate,
+  onScenarioChange,
+  setPath,
+  onReport,
+  reporting,
+}) {
+  const baselineLatency = Number(reportWorkload?.latency_requirement_ms ?? 50);
+  const [scenarioLatency, setScenarioLatency] = useState(baselineLatency);
+  useEffect(() => setScenarioLatency(baselineLatency), [baselineLatency]);
   const hasResult = resultSource !== null;
   const hasLiveResult = resultSource === 'live';
   const result = isRecord(resultData)
@@ -1113,6 +1163,20 @@ function Results({ resultData, resultSource, setPath, onReport, reporting }) {
         ? `₹${monthlyCost}`
         : `${monthlyCost} ${costCurrency.toUpperCase()}`;
   const scores = readScores(result, resultSource === 'mock');
+  const resultDetails = isRecord(result.details) ? result.details : {};
+  const benchmark = isRecord(resultDetails.benchmark) ? resultDetails.benchmark : null;
+  const comparison =
+    isRecord(simulationData) && isRecord(simulationData.comparison)
+      ? simulationData.comparison
+      : null;
+  const scoreDeltas = comparison && isRecord(comparison.score_deltas)
+    ? comparison.score_deltas
+    : {};
+  const benchmarkStatusLabel = benchmark?.status
+    ? benchmark.status.replaceAll('_', ' ').toUpperCase()
+    : hasLiveResult
+      ? 'NOT RETURNED'
+      : 'NOT REQUESTED';
 
   return (
     <main className="page results-page">
@@ -1205,19 +1269,86 @@ function Results({ resultData, resultSource, setPath, onReport, reporting }) {
             </div>
             <div>
               <p className="technical-label">SCENARIO EXPLORATION</p>
-              <h2>Try a different workload shape.</h2>
+              <h2>What if the latency target changed?</h2>
               <p>
-                This result stays unchanged while you edit inputs. Run a new analysis to get an updated service response.
+                Recalculate the route with the backend simulator. This is hypothetical; it does not deploy anything.
               </p>
             </div>
-            <button
-              className="button button-outline"
-              type="button"
-              onClick={() => navigateTo('/analyzer', setPath)}
-            >
-              Adjust inputs <span aria-hidden="true">→</span>
-            </button>
+            <div className="what-if-controls">
+              <label htmlFor="scenario-latency">
+                Latency target <strong>{scenarioLatency} ms</strong>
+              </label>
+              <input
+                id="scenario-latency"
+                type="range"
+                min="1"
+                max="1000"
+                step="1"
+                value={scenarioLatency}
+                onChange={(event) => {
+                  setScenarioLatency(Number(event.target.value));
+                  onScenarioChange();
+                }}
+                disabled={simulating}
+                aria-valuetext={`${scenarioLatency} milliseconds`}
+              />
+              <button
+                className="button button-outline"
+                type="button"
+                onClick={() => onSimulate({ latency_requirement_ms: scenarioLatency })}
+                disabled={!hasLiveResult || simulating || scenarioLatency === baselineLatency}
+              >
+                {simulating ? 'Simulating…' : 'Simulate what-if'}
+              </button>
+            </div>
           </section>
+          {comparison && (
+            <section className="scenario-result panel" aria-live="polite">
+              <div className="scenario-result-heading">
+                <div>
+                  <p className="technical-label">BACKEND SCENARIO RESULT</p>
+                  <h2>
+                    {comparison.recommendation_changed
+                      ? 'The leading tier changed.'
+                      : 'The leading tier stayed the same.'}
+                  </h2>
+                </div>
+                <span>
+                  {comparison.original_tier
+                    ? formatTierName(comparison.original_tier)
+                    : 'No feasible tier'}{' '}
+                  →{' '}
+                  {comparison.new_tier
+                    ? formatTierName(comparison.new_tier)
+                    : 'No feasible tier'}
+                </span>
+              </div>
+              <p>{comparison.explanation}</p>
+              {Object.keys(scoreDeltas).length > 0 && (
+                <div className="scenario-score-grid" aria-label="Tier score changes">
+                  {Object.entries(scoreDeltas).map(([tier, delta]) => (
+                    <div key={tier}>
+                      <span>{formatTierName(tier)}</span>
+                      <strong>
+                        {delta.before} → {delta.after}
+                        <small className={delta.delta > 0 ? 'score-up' : delta.delta < 0 ? 'score-down' : ''}>
+                          {delta.delta > 0 ? '+' : ''}{delta.delta}
+                        </small>
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isRecord(comparison.metrics_handling) && (
+                <p className="scenario-metrics-note">{comparison.metrics_handling.message}</p>
+              )}
+              {Array.isArray(comparison.limitations) && comparison.limitations.length > 0 && (
+                <ul className="scenario-limitations">
+                  {comparison.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+                </ul>
+              )}
+            </section>
+          )}
           <div className="info-grid">
             <InfoCard title="Warnings" items={result.warnings} />
             <InfoCard title="Trade-offs" items={result.tradeoffs} />
@@ -1228,7 +1359,7 @@ function Results({ resultData, resultSource, setPath, onReport, reporting }) {
               <button
                 className="button button-primary"
                 type="button"
-                onClick={() => onReport(resultData)}
+                onClick={() => onReport(reportWorkload)}
                 disabled={reporting}
               >
                 {reporting ? 'Preparing PDF…' : 'Download recommendation PDF'}
@@ -1241,9 +1372,13 @@ function Results({ resultData, resultSource, setPath, onReport, reporting }) {
       <aside className="benchmark-status" aria-label="Qualcomm benchmark integration status">
         <span className="benchmark-status-icon" aria-hidden="true">◌</span>
         <span>
-          <strong>QUALCOMM BENCHMARK INTEGRATION · {benchmarkStatus.status.toUpperCase()}</strong>
+          <strong>BENCHMARK CATALOG · {benchmarkStatusLabel}</strong>
           <small>
-            No verified dataset or API is configured; no hardware measurements are displayed.
+            {benchmark?.status === 'matched'
+              ? `${benchmark.model} on ${benchmark.device}: ${benchmark.inference_latency_ms} ms inference latency (${benchmark.runtime}, ${benchmark.precision}). ${benchmark.note} Source reported by backend: ${benchmark.source_reference}. Provenance is not independently verified.`
+              : benchmark?.reason || (hasLiveResult
+                ? 'No exact model, device, runtime, and precision match was returned for this workload.'
+                : 'Run a live analysis with an optional benchmark profile to check for an exact match.')}
           </small>
         </span>
       </aside>
@@ -1288,8 +1423,11 @@ function App() {
   const [health, setHealth] = useState('checking');
   const [workload, setWorkload] = useState(INITIAL_WORKLOAD);
   const [resultData, setResultData] = useState(null);
+  const [reportWorkload, setReportWorkload] = useState(null);
+  const [simulationData, setSimulationData] = useState(null);
   const [resultSource, setResultSource] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [error, setError] = useState('');
   const [clickRipples, setClickRipples] = useState([]);
@@ -1509,6 +1647,8 @@ function App() {
     setAnalyzing(true);
     setError('');
     setResultData(null);
+    setReportWorkload(null);
+    setSimulationData(null);
     setResultSource(null);
     try {
       if (mockMode) {
@@ -1517,6 +1657,8 @@ function App() {
       } else {
         const responseData = await getRecommendation(request);
         setResultData(responseData);
+        setReportWorkload(request);
+        setSimulationData(null);
         setResultSource('live');
       }
       navigateTo('/results', setPath);
@@ -1533,11 +1675,30 @@ function App() {
     }
   }
 
-  async function downloadReport(recommendation) {
+  async function simulate(changes) {
+    if (!reportWorkload || mockMode) return;
+    setSimulating(true);
+    setError('');
+    setSimulationData(null);
+    try {
+      const responseData = await simulateWorkload(reportWorkload, changes);
+      setSimulationData(responseData);
+    } catch (requestError) {
+      const detail =
+        requestError instanceof Error && requestError.message
+          ? requestError.message
+          : 'The scenario request failed.';
+      setError(`Unable to simulate this workload. ${detail}`);
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  async function downloadReport(workload) {
     setReporting(true);
     setError('');
     try {
-      const blob = await getRecommendationReport(recommendation);
+      const blob = await getRecommendationReport(workload);
       if (blob.size === 0) throw new Error('The report service returned an empty PDF.');
 
       const url = URL.createObjectURL(blob);
@@ -1576,6 +1737,11 @@ function App() {
       <Results
         resultData={resultData}
         resultSource={resultSource}
+        reportWorkload={reportWorkload}
+        simulationData={simulationData}
+        simulating={simulating}
+        onSimulate={simulate}
+        onScenarioChange={() => setSimulationData(null)}
         setPath={setPath}
         onReport={downloadReport}
         reporting={reporting}
